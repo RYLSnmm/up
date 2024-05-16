@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+
+<script type="module">
+	const safe = (promise) => {
+		return promise.then(value => ({ value }), error => ({ error }))
+	}
+	const b64 = (u8) => {
+		let s = ""
+		for (const ch of u8) {
+			s += String.fromCharCode(ch)
+		}
+		return btoa(s)
+	}
+	const addLog = (str) => {
+		const div = document.createElement("div")
+		const time = new Date().toLocaleTimeString()
+		log.value = `[${time}] ${str}\n${log.value}`
+	}
+	drop.ondragover = (event) => {
+		event.preventDefault()
+	}
+	drop.ondrop = async (event) => {
+		event.preventDefault()
+		const files = event.dataTransfer.files
+		if (files.length === 0) {
+			addLog("no dropped files")
+			return
+		}
+
+		const read_result = await safe(Promise.all(
+			[...files].map(async file => {
+				const buf = await file.arrayBuffer().catch(err => {
+					throw new Error("Failed to open file: " + file.name)
+				})
+				return [file.name, b64(new Uint8Array(buf))]
+			})
+		))
+		if (read_result.error) {
+			console.error(read_result.error)
+			addLog(read_result.error.message)
+			return
+		}
+
+		const save_result = await safe(fetch("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(Object.fromEntries(read_result.value))
+		}).then(async res => {
+			const body = await res.json()
+			if (res.ok) {
+				return { status: res.status, body }
+			} else {
+				throw new Error(`${res.status} ${body.message}`, { cause: body })
+			}
+		}))
+		if (save_result.error) {
+			console.error(save_result.error)
+			addLog(save_result.error.message)
+			return
+		}
+		addLog(`OK ${save_result.value.body.dir}`)
+	}
+</script>
+
+<style>
+	.page {
+		inset: 0;
+		position: fixed;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+		padding: 10px;
+	}
+
+	#drop {
+		align-content: center;
+		text-align: center;
+		font-weight: bold;
+		font-size: 1.5em;
+		letter-spacing: 1px;
+		color: #3579ab;
+		background: #b3e9ff;
+	}
+
+	textarea {
+		resize: none;
+		background: #fafef8;
+	}
+</style>
+
+<div class="page">
+	<div id="drop">Drop Here To Upload</div>
+	<textarea id="log" readonly></textarea>
+</div>
